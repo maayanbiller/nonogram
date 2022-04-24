@@ -1,15 +1,12 @@
-import pygame.gfxdraw
+import pygame
 import numpy as np
 import sys
-from PIL import Image
 import skimage.color
 import skimage.filters
 from tkinter import filedialog
 import logging
 from itertools import permutations
-from math import *
 
-from pygame.event import Event
 
 pygame.init()
 
@@ -256,33 +253,52 @@ def stop_until_key_pressed(key, key2: 'optional' = None):
                     return
 
 
-def get_options(row_len, sequences):
+def get_line_gaps_options(total_sum, gaps_num):
+    if gaps_num == 1:
+        return np.array([total_sum])
     options = []
-    for order in permutations(np.append(np.ones(sequences.shape[0]), np.zeros(row_len-sequences.shape[0]))):
-        option = np.zeros(row_len).astype(int)
-        replacement_indices = np.where(order==1)[0] + np.append([0], np.cumsum(sequences)[:-1])
-        for length,position in zip(sequences,replacement_indices):
-            option[position:position+length] = 1
-        options.append(option)
+    for i in range(total_sum + 1):
+        for option in get_line_gaps_options(total_sum - i, gaps_num - 1):
+            options.append(np.append([i], option))
     return options
 
 
-def get_overlaps(row_len, sequences):
-    overlaps = np.ones(row_len).astype(int)
-    for option in get_options(row_len, sequences):
+def get_options(row, sequences):
+    options = []
+    for gaps_option in get_line_gaps_options(row.shape[0] - np.sum(sequences) - sequences.shape[0] + 1, sequences.shape[0] + 1):  # get options of number of zeros in each gap
+        option = np.zeros(row.shape[0]).astype(int)
+        replacement_indices = (np.append([0], np.cumsum(sequences)) + np.cumsum(gaps_option) + np.arange(sequences.shape[0]+1))[:-1]
+        for length, position in zip(sequences, replacement_indices):
+            option[position:position+length] = 1
+        if np.all(row[option!=1] == 0):
+            options.append(option)
+
+    # for order in permutations(np.append(np.ones(sequences.shape[0]), np.zeros(row_len-sequences.shape[0]))):
+    #     option = np.zeros(row_len).astype(int)
+    #     replacement_indices = np.where(order==1)[0] + np.append([0], np.cumsum(sequences)[:-1])
+    #     for length,position in zip(sequences,replacement_indices):
+    #         option[position:position+length] = 1
+    #     options.append(option)
+    return options
+
+
+def get_overlaps(row, sequences):
+    overlaps = np.ones(row.shape[0]).astype(int)
+    for option in get_options(row, sequences):
         overlaps = np.bitwise_and(option, overlaps)
     return overlaps
 
 
 def solve_row(row, sequences):
-    overlaps = get_overlaps(row.shape[0], sequences)
+    overlaps = get_overlaps(row, sequences)
     row[overlaps==1] = 1
 
 
 def solve(cols_seq:list, rows_seq:list):
     ngram_arr = np.zeros((len(rows_seq), len(cols_seq)))
+    horizontal_margin, vertical_margin, squares_width = get_squares_width_and_margins(ngram_arr, margin)
     is_changed = True
-    while is_changed:
+    while True:  # is_changed:
         is_changed = False
         for y in range(ngram_arr.shape[0]):
             stop_until_key_pressed(pygame.K_SPACE)
@@ -291,6 +307,8 @@ def solve(cols_seq:list, rows_seq:list):
             if not np.array_equal(row_before_solve, ngram_arr[y,:]):
                 is_changed = True
             draw_ngram_puzzle(ngram_arr, margin, True, cols_seq, rows_seq)
+            pygame.draw.rect(win, (0, 100, 255, 50), (horizontal_margin, vertical_margin + squares_width * y, squares_width * ngram_arr.shape[1], squares_width))
+            pygame.display.update()
         for x in range(ngram_arr.shape[1]):
             stop_until_key_pressed(pygame.K_SPACE)
             col_before_solve = ngram_arr[:,x]
@@ -298,6 +316,8 @@ def solve(cols_seq:list, rows_seq:list):
             if not np.array_equal(col_before_solve, ngram_arr[:,x]):
                 is_changed = True
             draw_ngram_puzzle(ngram_arr, margin, True, cols_seq, rows_seq)
+            pygame.draw.rect(win, (0, 100, 255, 50), (horizontal_margin + squares_width * x, vertical_margin, squares_width, squares_width * ngram_arr.shape[0]))
+            pygame.display.update()
 
 
 '''def calculate_options_num(row, sequences):
@@ -327,12 +347,24 @@ pixelization_coef = 15
 invert_colors = True
 threshold_addition = 0
 margin = 370
-img_file_name = 'images/test8.jpg'
-img_arr = convert_img_file_to_bool_arr(img_file_name, pixelization_coef=pixelization_coef)
+img_file_name = 'data/test8.jpg'
+img_arr = convert_img_file_to_bool_arr(img_file_name, pixelization_coef=pixelization_coef)[::3,::3]
 create_puzzle_from_img(img_file_name)
 
 if Mode == solve_mode:
-    cols_seq, rows_seq = get_ngram_sequences(img_arr)
+    arr = np.array([[0,1,0,1,1,1,1,1,1,0,1,1],
+                    [0,1,0,1,0,0,0,1,1,0,1,1],
+                    [0,1,0,1,0,1,0,0,1,0,1,1],
+                    [0,1,0,1,0,1,0,1,1,0,1,1],
+                    [0,1,0,1,0,0,1,0,1,0,1,1],
+                    [0,1,0,1,0,0,0,1,1,0,1,1],
+                    [0,1,0,1,0,1,0,0,0,0,0,0],
+                    [0,1,0,1,0,1,0,0,0,0,0,0],
+                    [0,1,0,1,0,1,0,1,0,0,0,0],
+                    [0,1,0,1,0,1,0,0,0,0,1,0],
+                    [0,1,0,1,0,1,0,0,0,0,0,0],
+                    [0,1,0,1,0,0,1,1,0,0,0,0]])
+    cols_seq, rows_seq = get_ngram_sequences(arr)
     solve(cols_seq, rows_seq)
 
 while run:
